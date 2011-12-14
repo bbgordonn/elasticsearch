@@ -25,6 +25,7 @@ import org.elasticsearch.cluster.ClusterService;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.ClusterStateListener;
 import org.elasticsearch.cluster.ProcessedClusterStateUpdateTask;
+import org.elasticsearch.cluster.block.ClusterBlocks;
 import org.elasticsearch.cluster.routing.RoutingTable;
 import org.elasticsearch.cluster.routing.allocation.AllocationService;
 import org.elasticsearch.cluster.routing.allocation.RoutingAllocation;
@@ -162,6 +163,19 @@ public class MetaDataUpdateSettingsService extends AbstractComponent implements 
                         logger.info("updating number_of_replicas to [{}] for indices {}", updatedNumberOfReplicas, actualIndices);
                     }
 
+                    ClusterBlocks.Builder blocks = ClusterBlocks.builder().blocks(currentState.blocks());
+                    Boolean updatedReadOnly = openSettings.getAsBoolean(IndexMetaData.SETTING_READ_ONLY, null);
+                    if (updatedReadOnly != null) {
+                        for (String index : actualIndices) {
+                            if (updatedReadOnly) {
+                                blocks.addIndexBlock(index, IndexMetaData.INDEX_READ_ONLY_BLOCK);
+                            }
+                            else {
+                                blocks.removeIndexBlock(index, IndexMetaData.INDEX_READ_ONLY_BLOCK);
+                            }
+                        }
+                    }
+
                     // allow to change any settings to a close index, and only allow dynamic settings to be changed
                     // on an open index
                     Set<String> openIndices = Sets.newHashSet();
@@ -188,7 +202,7 @@ public class MetaDataUpdateSettingsService extends AbstractComponent implements 
                     }
 
 
-                    ClusterState updatedState = ClusterState.builder().state(currentState).metaData(metaDataBuilder).routingTable(routingTableBuilder).build();
+                    ClusterState updatedState = ClusterState.builder().state(currentState).metaData(metaDataBuilder).routingTable(routingTableBuilder).blocks(blocks).build();
 
                     // now, reroute in case things change that require it (like number of replicas)
                     RoutingAllocation.Result routingResult = allocationService.reroute(updatedState);
